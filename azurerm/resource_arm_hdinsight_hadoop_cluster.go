@@ -38,6 +38,14 @@ var hdInsightHadoopClusterZookeeperNodeDefinition = azure.HDInsightNodeDefinitio
 	FixedTargetInstanceCount: utils.Int32(int32(3)),
 }
 
+var hdInsightHadoopClusterEdgeNodeDefinition = azure.HDInsightNodeDefinition{
+	CanSpecifyInstanceCount:  false,
+	MinInstanceCount:         1,
+	MaxInstanceCount:         10,
+	CanSpecifyDisks:          false,
+	FixedTargetInstanceCount: utils.Int32(int32(1)),
+}
+
 func resourceArmHDInsightHadoopCluster() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceArmHDInsightHadoopClusterCreate,
@@ -89,8 +97,15 @@ func resourceArmHDInsightHadoopCluster() *schema.Resource {
 						"worker_node": azure.SchemaHDInsightNodeDefinition("roles.0.worker_node", hdInsightHadoopClusterWorkerNodeDefinition),
 
 						"zookeeper_node": azure.SchemaHDInsightNodeDefinition("roles.0.zookeeper_node", hdInsightHadoopClusterZookeeperNodeDefinition),
+
+						"edge_node": azure.SchemaHDInsightNodeDefinition("roles.0.edge_node", hdInsightHadoopClusterEdgeNodeDefinition),
 					},
 				},
+			},
+
+			"edge_ssh_endpoint": {
+				Type:     schema.TypeString,
+				Computed: true,
 			},
 
 			"tags": tagsSchema(),
@@ -136,6 +151,7 @@ func resourceArmHDInsightHadoopClusterCreate(d *schema.ResourceData, meta interf
 		HeadNodeDef:      hdInsightHadoopClusterHeadNodeDefinition,
 		WorkerNodeDef:    hdInsightHadoopClusterWorkerNodeDefinition,
 		ZookeeperNodeDef: hdInsightHadoopClusterZookeeperNodeDefinition,
+		EdgeNodeDef:      &hdInsightHadoopClusterEdgeNodeDefinition,
 	}
 	roles, err := expandHDInsightRoles(rolesRaw, hadoopRoles)
 	if err != nil {
@@ -252,12 +268,15 @@ func resourceArmHDInsightHadoopClusterRead(d *schema.ResourceData, meta interfac
 			HeadNodeDef:      hdInsightHadoopClusterHeadNodeDefinition,
 			WorkerNodeDef:    hdInsightHadoopClusterWorkerNodeDefinition,
 			ZookeeperNodeDef: hdInsightHadoopClusterZookeeperNodeDefinition,
+			EdgeNodeDef:      &hdInsightHadoopClusterEdgeNodeDefinition,
 		}
 		flattenedRoles := flattenHDInsightRoles(d, props.ComputeProfile, hadoopRoles)
 		if err := d.Set("roles", flattenedRoles); err != nil {
 			return fmt.Errorf("Error flattening `roles`: %+v", err)
 		}
 
+		edgeSSHEndpoint := azure.FindHDInsightConnectivityEndpoint("EDGESSH", props.ConnectivityEndpoints)
+		d.Set("edge_ssh_endpoint", edgeSSHEndpoint)
 		httpEndpoint := azure.FindHDInsightConnectivityEndpoint("HTTPS", props.ConnectivityEndpoints)
 		d.Set("https_endpoint", httpEndpoint)
 		sshEndpoint := azure.FindHDInsightConnectivityEndpoint("SSH", props.ConnectivityEndpoints)
