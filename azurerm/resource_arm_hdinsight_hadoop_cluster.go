@@ -115,6 +115,8 @@ func resourceArmHDInsightHadoopCluster() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+
+			//"user_assigned_managed_identity": azure.SchemaHDInsinghtsIdentity(),
 		},
 	}
 }
@@ -138,10 +140,12 @@ func resourceArmHDInsightHadoopClusterCreate(d *schema.ResourceData, meta interf
 	gateway := azure.ExpandHDInsightsConfigurations(gatewayRaw)
 
 	storageAccountsRaw := d.Get("storage_account").([]interface{})
-	storageAccounts, err := azure.ExpandHDInsightsStorageAccounts(storageAccountsRaw)
+	storageAccounts, identity, err := azure.ExpandHDInsightsStorageAccounts(storageAccountsRaw)
 	if err != nil {
 		return fmt.Errorf("Error expanding `storage_account`: %s", err)
 	}
+
+	log.Printf("XXXXX OVER HERE: %+v", identity)
 
 	rolesRaw := d.Get("roles").([]interface{})
 	hadoopRoles := hdInsightRoleDefinition{
@@ -153,6 +157,12 @@ func resourceArmHDInsightHadoopClusterCreate(d *schema.ResourceData, meta interf
 	if err != nil {
 		return fmt.Errorf("Error expanding `roles`: %+v", err)
 	}
+
+	// userManagedIdentityRaw := d.Get("user_assigned_managed_identity").([]interface{})
+	// userManagedIdentity, err := azure.ExpandHDInsightsIdentity(userManagedIdentityRaw)
+	// if err != nil {
+	// 	return fmt.Errorf("Error expanding `user_assigned_managed_identity`: %s", err)
+	// }
 
 	if features.ShouldResourcesBeImported() {
 		existing, err := client.Get(ctx, resourceGroup, name)
@@ -185,7 +195,8 @@ func resourceArmHDInsightHadoopClusterCreate(d *schema.ResourceData, meta interf
 				Roles: roles,
 			},
 		},
-		Tags: tags.Expand(t),
+		Tags:     tags.Expand(t),
+		Identity: identity,
 	}
 	future, err := client.Create(ctx, resourceGroup, name, params)
 	if err != nil {
