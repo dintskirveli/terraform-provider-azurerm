@@ -126,16 +126,6 @@ func resourceArmHDInsightMLServicesCluster() *schema.Resource {
 	}
 }
 
-func expandHDInsightsMLServicesConfigurations(gateway []interface{}, rStudio bool) map[string]interface{} {
-	config := azure.ExpandHDInsightsConfigurations(gateway)
-
-	config["rserver"] = map[string]interface{}{
-		"rstudio": rStudio,
-	}
-
-	return config
-}
-
 func resourceArmHDInsightMLServicesClusterCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*ArmClient).HDInsight.ClustersClient
 	ctx, cancel := timeouts.ForCreate(meta.(*ArmClient).StopContext, d)
@@ -150,7 +140,15 @@ func resourceArmHDInsightMLServicesClusterCreate(d *schema.ResourceData, meta in
 
 	gatewayRaw := d.Get("gateway").([]interface{})
 	rStudio := d.Get("rstudio").(bool)
-	gateway := expandHDInsightsMLServicesConfigurations(gatewayRaw, rStudio)
+	additionalConfigurationRaw := d.Get("configuration").([]interface{})
+	configurations, err := azure.ExpandHDInsightsConfigurations(gatewayRaw, additionalConfigurationRaw)
+	if err != nil {
+		return fmt.Errorf("error expanding `configuration`: %s", err)
+	}
+
+	configurations["rserver"] = map[string]interface{}{
+		"rstudio": rStudio,
+	}
 
 	storageAccountsRaw := d.Get("storage_account").([]interface{})
 	storageAccounts, identity, err := azure.ExpandHDInsightsStorageAccounts(storageAccountsRaw, nil)
@@ -191,7 +189,7 @@ func resourceArmHDInsightMLServicesClusterCreate(d *schema.ResourceData, meta in
 			ClusterVersion: utils.String(clusterVersion),
 			ClusterDefinition: &hdinsight.ClusterDefinition{
 				Kind:           utils.String("MLServices"),
-				Configurations: gateway,
+				Configurations: configurations,
 			},
 			StorageProfile: &hdinsight.StorageProfile{
 				Storageaccounts: storageAccounts,
@@ -251,7 +249,7 @@ func resourceArmHDInsightMLServicesClusterRead(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error retrieving HDInsight MLServices Cluster %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
-	configuration, err := configurationsClient.Get(ctx, resourceGroup, name, "gateway")
+	configuration, err := configurationsClient.List(ctx, resourceGroup, name)
 	if err != nil {
 		return fmt.Errorf("Error retrieving Gateway Configuration for HDInsight MLServices Cluster %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
@@ -273,8 +271,16 @@ func resourceArmHDInsightMLServicesClusterRead(d *schema.ResourceData, meta inte
 		d.Set("tier", string(props.Tier))
 
 		if def := props.ClusterDefinition; def != nil {
-			if err := d.Set("gateway", azure.FlattenHDInsightsConfigurations(configuration.Value)); err != nil {
-				return fmt.Errorf("Error flattening `gateway`: %+v", err)
+			setupConfiguration := d.Get("configuration").([]interface{})
+			gateway, configurations, err := azure.FlattenHDInsightsConfigurations(configuration.Configurations, setupConfiguration)
+			if err != nil {
+				return fmt.Errorf("error flattening `configuration`: %+v", err)
+			}
+			if err := d.Set("gateway", gateway); err != nil {
+				return fmt.Errorf("error flattening `gateway`: %+v", err)
+			}
+			if err := d.Set("configurations", configurations); err != nil {
+				return fmt.Errorf("error flattening `configurations`: %+v", err)
 			}
 
 			var rStudio bool
