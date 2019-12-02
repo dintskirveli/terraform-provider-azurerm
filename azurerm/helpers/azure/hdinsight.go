@@ -2,7 +2,6 @@ package azure
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -108,7 +107,6 @@ func SchemaHDInsightsGateway() *schema.Schema {
 }
 
 func ExpandHDInsightsAdditionalConfigurations(additionalConfigurations []interface{}) (map[string]map[string]interface{}, error) {
-	log.Printf("[DEBUG] XXX ExpandHDInsightsAdditionalConfigurations")
 	configurations := make(map[string]map[string]interface{}, 0)
 
 	for _, config := range additionalConfigurations {
@@ -117,15 +115,8 @@ func ExpandHDInsightsAdditionalConfigurations(additionalConfigurations []interfa
 		configType := v["type"].(string)
 		key := v["key"].(string)
 		value := v["value"].(string)
-		log.Printf("[DEBUG] XXX ExpandHDInsightsAdditionalConfigurations %s.%s = %s", configType, key, value)
 
-		if _, ok := configurations[configType]; ok {
-			log.Printf("[DEBUG] XXX ExpandHDInsightsAdditionalConfigurations %s exists", configType)
-			if _, ok := configurations[configType][key]; ok {
-				log.Printf("[DEBUG] XXX ExpandHDInsightsAdditionalConfigurations %s.%s exists", configType, key)
-				return nil, fmt.Errorf("duplicate configuration %s.%s", configType, key)
-			}
-		} else {
+		if _, ok := configurations[configType]; !ok {
 			configurations[configType] = make(map[string]interface{}, 0)
 		}
 		configurations[configType][key] = value
@@ -189,8 +180,6 @@ func FlattenHDInsightsConfigurations(input map[string]map[string]*string, setupC
 		password = *v
 	}
 
-	//ExpandHDInsightsConfigurations()
-
 	gateway := []interface{}{
 		map[string]interface{}{
 			"enabled":  enabled,
@@ -221,6 +210,16 @@ func FlattenHDInsightsConfigurations(input map[string]map[string]*string, setupC
 		}
 
 	}
+	//
+	//sort.Slice(configurations, func(i, j int) bool {
+	//	left := configurations[i].(map[string]string)
+	//	right := configurations[j].(map[string]string)
+	//	if left["type"] == right["type"] {
+	//		return left["key"] < right["key"]
+	//	} else {
+	//		return left["type"] < right["type"]
+	//	}
+	//})
 
 	return gateway, configurations, nil
 }
@@ -616,7 +615,7 @@ func SchemaHDInsightAdditionalConfigurations() *schema.Schema {
 	//}
 
 	return &schema.Schema{
-		Type:     schema.TypeList,
+		Type:     schema.TypeSet,
 		Optional: true,
 		//MaxItems: 1,
 		ForceNew: true,

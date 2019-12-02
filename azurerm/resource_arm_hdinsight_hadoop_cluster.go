@@ -145,7 +145,7 @@ func resourceArmHDInsightHadoopClusterCreate(d *schema.ResourceData, meta interf
 	componentVersions := expandHDInsightHadoopComponentVersion(componentVersionsRaw)
 
 	gatewayRaw := d.Get("gateway").([]interface{})
-	additionalConfigurationRaw := d.Get("configuration").([]interface{})
+	additionalConfigurationRaw := d.Get("configuration").(*schema.Set).List()
 	configurations, err := azure.ExpandHDInsightsConfigurations(gatewayRaw, additionalConfigurationRaw)
 	if err != nil {
 		return fmt.Errorf("error expanding `configuration`: %s", err)
@@ -297,7 +297,7 @@ func resourceArmHDInsightHadoopClusterRead(d *schema.ResourceData, meta interfac
 				return fmt.Errorf("error flattening `component_version`: %+v", err)
 			}
 
-			setupConfiguration := d.Get("configuration").([]interface{})
+			setupConfiguration := d.Get("configuration").(*schema.Set).List()
 			gateway, configurations, err := azure.FlattenHDInsightsConfigurations(configuration.Configurations, setupConfiguration)
 			if err != nil {
 				return fmt.Errorf("error flattening `configuration`: %+v", err)
