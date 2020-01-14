@@ -114,7 +114,7 @@ func dataSourceArmHDInsightClusterRead(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error retrieving HDInsight Cluster %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
-	configuration, err := configurationsClient.Get(ctx, resourceGroup, name, "gateway")
+	configuration, err := configurationsClient.List(ctx, resourceGroup, name)
 	if err != nil {
 		return fmt.Errorf("Error retrieving Configuration for HDInsight Cluster %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
@@ -136,8 +136,16 @@ func dataSourceArmHDInsightClusterRead(d *schema.ResourceData, meta interface{})
 			if kind := def.Kind; kind != nil {
 				d.Set("kind", strings.ToLower(*kind))
 			}
-			if err := d.Set("gateway", azure.FlattenHDInsightsConfigurations(configuration.Value)); err != nil {
-				return fmt.Errorf("Error flattening `gateway`: %+v", err)
+			setupConfiguration := d.Get("configuration").([]interface{})
+			gateway, configurations, err := azure.FlattenHDInsightsConfigurations(configuration.Configurations, setupConfiguration)
+			if err != nil {
+				return fmt.Errorf("error flattening `configuration`: %+v", err)
+			}
+			if err := d.Set("gateway", gateway); err != nil {
+				return fmt.Errorf("error flattening `gateway`: %+v", err)
+			}
+			if err := d.Set("configurations", configurations); err != nil {
+				return fmt.Errorf("error flattening `configurations`: %+v", err)
 			}
 		}
 

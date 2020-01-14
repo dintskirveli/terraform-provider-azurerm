@@ -116,6 +116,8 @@ func resourceArmHDInsightInteractiveQueryCluster() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+
+			"configuration": azure.SchemaHDInsightAdditionalConfigurations(),
 		},
 	}
 }
@@ -136,7 +138,11 @@ func resourceArmHDInsightInteractiveQueryClusterCreate(d *schema.ResourceData, m
 	componentVersions := expandHDInsightInteractiveQueryComponentVersion(componentVersionsRaw)
 
 	gatewayRaw := d.Get("gateway").([]interface{})
-	gateway := azure.ExpandHDInsightsConfigurations(gatewayRaw)
+	additionalConfigurationRaw := d.Get("configuration").(*schema.Set).List()
+	configurations, err := azure.ExpandHDInsightsConfigurations(gatewayRaw, additionalConfigurationRaw)
+	if err != nil {
+		return fmt.Errorf("error expanding `configuration`: %s", err)
+	}
 
 	storageAccountsRaw := d.Get("storage_account").([]interface{})
 	storageAccountsGen2Raw := d.Get("storage_account_gen2").([]interface{})
@@ -178,7 +184,7 @@ func resourceArmHDInsightInteractiveQueryClusterCreate(d *schema.ResourceData, m
 			ClusterDefinition: &hdinsight.ClusterDefinition{
 				Kind:             utils.String("INTERACTIVEHIVE"),
 				ComponentVersion: componentVersions,
-				Configurations:   gateway,
+				Configurations:   configurations,
 			},
 			StorageProfile: &hdinsight.StorageProfile{
 				Storageaccounts: storageAccounts,
@@ -238,7 +244,7 @@ func resourceArmHDInsightInteractiveQueryClusterRead(d *schema.ResourceData, met
 		return fmt.Errorf("Error retrieving HDInsight Interactive Query Cluster %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
 
-	configuration, err := configurationsClient.Get(ctx, resourceGroup, name, "gateway")
+	configuration, err := configurationsClient.List(ctx, resourceGroup, name)
 	if err != nil {
 		return fmt.Errorf("Error retrieving Configuration for HDInsight Interactive Query Cluster %q (Resource Group %q): %+v", name, resourceGroup, err)
 	}
@@ -255,12 +261,16 @@ func resourceArmHDInsightInteractiveQueryClusterRead(d *schema.ResourceData, met
 		d.Set("tier", string(props.Tier))
 
 		if def := props.ClusterDefinition; def != nil {
-			if err := d.Set("component_version", flattenHDInsightInteractiveQueryComponentVersion(def.ComponentVersion)); err != nil {
-				return fmt.Errorf("Error flattening `component_version`: %+v", err)
+			setupConfiguration := d.Get("configuration").(*schema.Set).List()
+			gateway, configurations, err := azure.FlattenHDInsightsConfigurations(configuration.Configurations, setupConfiguration)
+			if err != nil {
+				return fmt.Errorf("error flattening `configuration`: %+v", err)
 			}
-
-			if err := d.Set("gateway", azure.FlattenHDInsightsConfigurations(configuration.Value)); err != nil {
-				return fmt.Errorf("Error flattening `gateway`: %+v", err)
+			if err := d.Set("gateway", gateway); err != nil {
+				return fmt.Errorf("error flattening `gateway`: %+v", err)
+			}
+			if err := d.Set("configuration", configurations); err != nil {
+				return fmt.Errorf("error flattening `configuration`: %+v", err)
 			}
 		}
 

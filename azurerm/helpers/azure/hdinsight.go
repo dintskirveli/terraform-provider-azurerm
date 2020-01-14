@@ -105,26 +105,126 @@ func SchemaHDInsightsGateway() *schema.Schema {
 	}
 }
 
-func ExpandHDInsightsConfigurations(input []interface{}) map[string]interface{} {
-	vs := input[0].(map[string]interface{})
+func SchemaHDInsightAdditionalConfigurations() *schema.Schema {
+	//result := make(map[string]*schema.Schema, 0)
+
+	//https://docs.microsoft.com/en-us/azure/hdinsight/hdinsight-hadoop-customize-cluster-bootstrap
+	//configTypes := []string{
+	//	"clusterIdentity",
+	//	"core-site",
+	//	"hbase-env",
+	//	"hbase-site",
+	//	"hdfs-site",
+	//	"hive-env",
+	//	"hive-site",
+	//	"mapred-site",
+	//	"oozie-site",
+	//	"oozie-env",
+	//	"storm-site",
+	//	"tez-site",
+	//	"webhcat-site",
+	//	"yarn-site",
+	//	//"server.properties",
+	//}
+
+	//for _, configType := range configTypes {
+	//	result[configType] = &schema.Schema{
+	//		Type:     schema.TypeMap,
+	//		Optional: true,
+	//		ForceNew: true,
+	//		Elem:     schema.TypeString,
+	//	}
+	//}
+
+	return &schema.Schema{
+		Type:     schema.TypeSet,
+		Optional: true,
+		//MaxItems: 1,
+		ForceNew: true,
+		Elem: &schema.Resource{
+			//Schema: result,
+			Schema: map[string]*schema.Schema{
+				"type": {
+					Type:         schema.TypeString,
+					Required:     true,
+					ValidateFunc: validate.NoEmptyStrings,
+					ForceNew:     true,
+				},
+				"key": {
+					Type:         schema.TypeString,
+					Required:     true,
+					ValidateFunc: validate.NoEmptyStrings,
+					ForceNew:     true,
+				},
+				"value": {
+					Type:         schema.TypeString,
+					Required:     true,
+					ValidateFunc: validate.NoEmptyStrings,
+					ForceNew:     true,
+				},
+			},
+		},
+	}
+}
+
+func ExpandHDInsightsConfigurations(gateway []interface{}, additionalConfigurations []interface{}) (map[string]map[string]interface{}, error) {
+	vs := gateway[0].(map[string]interface{})
 
 	// NOTE: Admin username must be different from SSH Username
 	enabled := vs["enabled"].(bool)
 	username := vs["username"].(string)
 	password := vs["password"].(string)
 
-	return map[string]interface{}{
-		"gateway": map[string]interface{}{
+	configurations := map[string]map[string]interface{}{
+		"gateway": {
 			"restAuthCredential.isEnabled": enabled,
 			"restAuthCredential.username":  username,
 			"restAuthCredential.password":  password,
 		},
 	}
+
+	expandedConfigurations, err := ExpandHDInsightsAdditionalConfigurations(additionalConfigurations)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range expandedConfigurations {
+		configurations[k] = v
+	}
+
+	return configurations, nil
 }
 
-func FlattenHDInsightsConfigurations(input map[string]*string) []interface{} {
+func ExpandHDInsightsAdditionalConfigurations(additionalConfigurations []interface{}) (map[string]map[string]interface{}, error) {
+	configurations := make(map[string]map[string]interface{}, 0)
+
+	for _, config := range additionalConfigurations {
+		v := config.(map[string]interface{})
+
+		configType := v["type"].(string)
+		key := v["key"].(string)
+		value := v["value"].(string)
+
+		if _, ok := configurations[configType]; !ok {
+			configurations[configType] = make(map[string]interface{}, 0)
+		}
+		configurations[configType][key] = value
+	}
+
+	return configurations, nil
+}
+
+func FlattenHDInsightsConfigurations(input map[string]map[string]*string, setupConfiguration []interface{}) ([]interface{}, []interface{}, error) {
+
+	gatewayInput, ok := input["gateway"]
+	if ok {
+		delete(input, "gateway")
+	} else {
+		gatewayInput = make(map[string]*string, 0)
+	}
+
 	enabled := false
-	if v, exists := input["restAuthCredential.isEnabled"]; exists && v != nil {
+	if v, exists := gatewayInput["restAuthCredential.isEnabled"]; exists && v != nil {
 		e, err := strconv.ParseBool(*v)
 		if err == nil {
 			enabled = e
@@ -132,22 +232,46 @@ func FlattenHDInsightsConfigurations(input map[string]*string) []interface{} {
 	}
 
 	username := ""
-	if v, exists := input["restAuthCredential.username"]; exists && v != nil {
+	if v, exists := gatewayInput["restAuthCredential.username"]; exists && v != nil {
 		username = *v
 	}
 
 	password := ""
-	if v, exists := input["restAuthCredential.password"]; exists && v != nil {
+	if v, exists := gatewayInput["restAuthCredential.password"]; exists && v != nil {
 		password = *v
 	}
 
-	return []interface{}{
+	gateway := []interface{}{
 		map[string]interface{}{
 			"enabled":  enabled,
 			"username": username,
 			"password": password,
 		},
 	}
+
+	setupConfigurationMap, err := ExpandHDInsightsAdditionalConfigurations(setupConfiguration)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	configurations := make([]interface{}, 0)
+
+	for configType, config := range input {
+		for key, value := range config {
+
+			if nil != setupConfigurationMap[configType] && setupConfigurationMap[configType][key] != nil {
+				v := map[string]interface{}{
+					"type":  configType,
+					"key":   key,
+					"value": value,
+				}
+
+				configurations = append(configurations, v)
+			}
+		}
+
+	}
+	return gateway, configurations, nil
 }
 
 func SchemaHDInsightsStorageAccounts() *schema.Schema {
